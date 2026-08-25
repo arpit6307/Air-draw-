@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Draw - Gesture-Based Doodler</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --neon-cyan: #00f5ff;
+      --neon-pink: #ff00ff;
+      --neon-green: #00ff88;
+      --dark: #0a0a0f;
+      --glass: rgba(255,255,255,0.06);
+      --glass-border: rgba(255,255,255,0.12);
+      --ui-font: 'Space Grotesk', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+      --emoji-font: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+    }
+
+    body {
+      background: var(--dark);
+      font-family: var(--ui-font);
+      color: #fff;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Loading Screen */
+    #loading {
+      position: fixed; inset: 0; z-index: 100;
+      background: var(--dark);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 24px;
+      transition: opacity 0.6s ease;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+
+    .logo-title {
+      font-size: 2rem; font-weight: 700; letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--neon-cyan), var(--neon-pink));
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+    .loader-bar {
+      width: 200px; height: 2px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px; overflow: hidden;
+    }
+    .loader-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+      width: 0%; transition: width 0.4s ease;
+      border-radius: 2px;
+    }
+    .loader-text { font-size: 13px; color: rgba(255,255,255,0.5); letter-spacing: 0.05em; }
+
+    /* Onboarding Modal */
+    #onboarding {
+      position: fixed; inset: 0; z-index: 90;
+      background: rgba(0,0,0,0.85);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #onboarding.hidden { display: none; }
+    .modal {
+      background: #13131a;
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 36px 40px;
+      max-width: 480px; width: 90%;
+      text-align: center;
+    }
+    .modal h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 8px; }
+    .modal p { color: rgba(255,255,255,0.5); font-size: 14px; margin-bottom: 28px; }
+    .gestures-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px; margin-bottom: 28px;
+    }
+    .gesture-card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px; padding: 16px 12px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .gesture-card.wide {
+      grid-column: span 2;
+    }
+    .gesture-icon {
+      font-size: 28px;
+      font-family: var(--emoji-font);
+      line-height: 1;
+    }
+    .gesture-label { font-size: 13px; font-weight: 600; color: var(--neon-cyan); }
+    .gesture-desc { font-size: 11px; color: rgba(255,255,255,0.45); text-align: center; }
+    .modal-tip {
+      margin: -6px 0 20px;
+      color: rgba(255,255,255,0.6);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .btn-start {
+      background: linear-gradient(135deg, var(--neon-cyan), var(--neon-pink));
+      color: #000; border: none; border-radius: 10px;
+      padding: 12px 36px; font-size: 15px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    .btn-start:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-start:active { transform: scale(0.97); }
+
+    /* Main App */
+    #app {
+      position: fixed; inset: 0;
+      display: flex; align-items: stretch; justify-content: center;
+    }
+
+    .canvas-stack {
+      position: relative; flex: 1; overflow: hidden;
+    }
+    .canvas-stack canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+    }
+    #camera-canvas { z-index: 1; }
+    #drawing-canvas { z-index: 2; }
+    #ui-canvas { z-index: 3; }
+
+    /* Toolbar */
+    #toolbar {
+      position: absolute; right: 20px; top: 50%;
+      transform: translateY(-50%);
+      z-index: 10;
+      display: flex; flex-direction: column; gap: 6px;
+      background: rgba(10,10,15,0.85);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px; padding: 12px 10px;
+      backdrop-filter: blur(12px);
+      width: min(320px, calc(100vw - 32px));
+      min-width: 0;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #toolbar.hand-under {
+      z-index: 2;
+      opacity: 0.82;
+    }
+    .toolbar-grip {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px;
+      margin: -2px 0 2px;
+      padding: 2px 2px 4px;
+      color: rgba(255,255,255,0.46);
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+    .toolbar-grip:active { cursor: grabbing; }
+    .toolbar-grip::before {
+      content: 'Palette';
+      color: rgba(255,255,255,0.7);
+      letter-spacing: 0.18em;
+    }
+    .toolbar-grip::after {
+      content: 'Drag';
+      color: rgba(255,255,255,0.34);
+      letter-spacing: 0.14em;
+    }
+
+    .tb-label {
+      font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: rgba(255,255,255,0.35); margin-bottom: 2px;
+    }
+
+    .color-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+    }
+    .color-swatch {
+      width: 18px; height: 18px; border-radius: 50%;
+      cursor: pointer; border: 2px solid transparent;
+      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .color-swatch:hover { transform: scale(1.2); }
+    .color-swatch.active { border-color: #fff; transform: scale(1.15); }
+    .color-swatch.hand-hover {
+      border-color: rgba(255,255,255,0.92);
+      transform: scale(1.28);
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.08), 0 0 18px var(--swatch-color);
+    }
+
+    .tb-divider {
+      height: 1px; background: var(--glass-border);
+      margin: 3px 0;
+    }
+
+    input[type=range] {
+      width: 100%; height: 4px; border-radius: 2px;
+      -webkit-appearance: none; appearance: none;
+      background: rgba(255,255,255,0.15); cursor: pointer; outline: none;
+      transition: background 0.15s, filter 0.15s;
+    }
+    input[type=range].hand-slider-active {
+      background: rgba(0,245,255,0.28);
+      filter: drop-shadow(0 0 8px rgba(0,245,255,0.3));
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--neon-cyan); cursor: pointer;
+    }
+    input[type=range].hand-slider-active::-webkit-slider-thumb {
+      box-shadow: 0 0 0 3px rgba(255,255,255,0.16), 0 0 14px rgba(0,245,255,0.55);
+      transform: scale(1.08);
+    }
+
+    .val-display {
+      font-size: 11px; color: rgba(255,255,255,0.5);
+      text-align: right; font-variant-numeric: tabular-nums;
+    }
+
+    .icon-btn {
+      width: 34px; height: 34px; border-radius: 8px;
+      background: var(--glass); border: 1px solid var(--glass-border);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background 0.15s, transform 0.1s;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1;
+      color: rgba(255,255,255,0.92);
+      user-select: none;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.12); }
+    .icon-btn:active { transform: scale(0.93); }
+    .btn-row { display: flex; gap: 6px; justify-content: center; }
+    .btn-row .icon-btn { font-family: var(--emoji-font); }
+    .zoom-row { display: flex; gap: 6px; align-items: center; }
+    .zoom-row .icon-btn { font-family: var(--ui-font); }
+    .zoom-pill {
+      flex: 1; min-width: 58px; height: 34px; border-radius: 8px;
+      border: 1px solid var(--glass-border);
+      background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85);
+      font: inherit; cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .zoom-pill:hover { background: rgba(255,255,255,0.12); }
+    .zoom-pill:active { transform: scale(0.97); }
+    .zoom-help {
+      font-size: 9.5px;
+      line-height: 1.35;
+      color: rgba(255,255,255,0.42);
+    }
+    .status-text {
+      font-size: 10.5px; line-height: 1.32; color: rgba(255,255,255,0.58);
+    }
+
+    /* HUD */
+    #gesture-hud {
+      position: absolute; left: 50%; bottom: 24px;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(10,10,15,0.7);
+      border: 1px solid var(--glass-border);
+      border-radius: 30px; padding: 10px 20px;
+      backdrop-filter: blur(10px);
+      font-size: 13px; font-weight: 500;
+      transition: opacity 0.3s;
+    }
+    #hud-icon { font-size: 18px; }
+    #hud-text { color: rgba(255,255,255,0.7); }
+
+    /* Camera toggle */
+    #cam-toggle {
+      position: absolute; left: 20px; top: 20px;
+      z-index: 10;
+      background: rgba(10,10,15,0.7);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px; padding: 8px 14px;
+      font-size: 12px; font-weight: 500;
+      cursor: pointer; backdrop-filter: blur(8px);
+      color: rgba(255,255,255,0.7);
+      transition: background 0.15s;
+    }
+    #cam-toggle:hover { background: rgba(255,255,255,0.1); }
+
+    @media (max-width: 780px) {
+      #toolbar {
+        top: auto; right: 12px; left: 12px; bottom: 88px;
+        transform: none; min-width: 0;
+      }
+
+      .color-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+      .gestures-grid { grid-template-columns: 1fr; }
+      .gesture-card.wide { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="logo-title">Air Draw &#10024;</div>
+  <div class="loader-bar"><div class="loader-fill" id="loader-fill"></div></div>
+  <div class="loader-text" id="loader-text">Initializing hand tracking...</div>
+</div>
+
+<!-- Onboarding -->
+<div id="onboarding" class="hidden">
+  <div class="modal">
+    <h2>How to Draw in Air &#10024;</h2>
+    <p>Use your hand gestures in front of the camera to draw neon art</p>
+    <div class="gestures-grid">
+      <div class="gesture-card">
+        <span class="gesture-icon">&#9757;&#65039;</span>
+        <span class="gesture-label">Draw</span>
+        <span class="gesture-desc">Point index finger up</span>
+      </div>
+      <div class="gesture-card">
+        <span class="gesture-icon">&#9995;</span>
+        <span class="gesture-label">Erase</span>
+        <span class="gesture-desc">Open palm sweep</span>
+      </div>
+      <div class="gesture-card">
+        <span class="gesture-icon">&#129295;</span>
+        <span class="gesture-label">Move</span>
+        <span class="gesture-desc">Pinch on a stroke to move only that object</span>
+      </div>
+      <div class="gesture-card">
+        <span class="gesture-icon">&#9994;</span>
+        <span class="gesture-label">Idle</span>
+        <span class="gesture-desc">Closed fist to rest</span>
+      </div>
+      <div class="gesture-card wide">
+        <span class="gesture-icon">&#128080;</span>
+        <span class="gesture-label">Zoom</span>
+        <span class="gesture-desc">Use both hands and pinch to zoom in or zoom out</span>
+      </div>
+    </div>
+    <p class="modal-tip">Use the wheel or plus and minus buttons. You can also pinch with both hands to zoom like a hologram.</p>
+    <button class="btn-start" id="btn-go">Let's Draw!</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="canvas-stack">
+    <canvas id="camera-canvas"></canvas>
+    <canvas id="drawing-canvas"></canvas>
+    <canvas id="ui-canvas"></canvas>
+  </div>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div class="toolbar-grip" id="toolbar-grip"></div>
+    <div class="tb-label">Colors</div>
+    <div class="color-grid" id="color-grid"></div>
+    <div class="tb-divider"></div>
+    <div class="tb-label">Thickness</div>
+    <input type="range" id="thickness" min="2" max="40" value="6" step="1" />
+    <div class="val-display" id="thickness-val">6px</div>
+    <div class="tb-divider"></div>
+    <div class="tb-label">Glow</div>
+    <input type="range" id="glow" min="0" max="60" value="30" step="1" />
+    <div class="val-display" id="glow-val">30</div>
+    <div class="tb-divider"></div>
+    <div class="tb-label">Zoom</div>
+    <div class="zoom-row">
+      <div class="icon-btn" id="btn-zoom-out" title="Zoom out">&minus;</div>
+      <button class="zoom-pill" id="btn-zoom-reset" title="Reset zoom">100%</button>
+      <div class="icon-btn" id="btn-zoom-in" title="Zoom in">+</div>
+    </div>
+    <div class="zoom-help">Wheel, plus, minus, or two-hand pinch zoom. Use your hand on colors, thickness, and glow too.</div>
+    <div class="status-text" id="selection-status">Draw a stroke, use your hand on color, thickness, glow, or pinch a stroke to move it.</div>
+    <div class="tb-divider"></div>
+    <div class="btn-row">
+      <div class="icon-btn" id="btn-undo" title="Undo">&#8630;</div>
+      <div class="icon-btn" id="btn-clear" title="Clear">&#128465;&#65039;</div>
+      <div class="icon-btn" id="btn-save" title="Download">&#11015;&#65039;</div>
+    </div>
+  </div>
+
+  <!-- Gesture HUD -->
+  <div id="gesture-hud">
+    <span id="hud-icon">IDLE</span>
+    <span id="hud-text">SHOW YOUR HAND</span>
+  </div>
+
+  <!-- Camera Toggle -->
+  <button id="cam-toggle">Camera ON</button>
+</div>
+
+<script type="module" src="./air-draw.js"></script>
+</body>
+</html>
