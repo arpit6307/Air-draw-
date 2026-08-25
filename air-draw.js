@@ -1,4 +1,4 @@
-﻿import { HandLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs';
+import { HandLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs';
 
 const COLOR_OPTIONS = [
   { value: '#00f5ff', name: 'Cyan' },
@@ -69,6 +69,9 @@ let activeHandSliderType = null;
 let toolbarDragPointerId = null;
 let toolbarDragOffset = { x: 0, y: 0 };
 let toolbarFloating = false;
+let currentFacingMode = 'user';
+let currentStream = null;
+let isTouchDrawing = false;
 
 const viewport = {
   width: window.innerWidth,
@@ -88,6 +91,8 @@ const loaderText = document.getElementById('loader-text');
 const onboarding = document.getElementById('onboarding');
 const toolbar = document.getElementById('toolbar');
 const toolbarGrip = document.getElementById('toolbar-grip');
+const toolbarToggleBtn = document.getElementById('toolbar-toggle');
+const toolbarCloseBtn = document.getElementById('toolbar-close');
 const canvasStack = document.querySelector('.canvas-stack');
 const camCanvas = document.getElementById('camera-canvas');
 const drawCanvas = document.getElementById('drawing-canvas');
@@ -102,6 +107,7 @@ const glowInput = document.getElementById('glow');
 const thickVal = document.getElementById('thickness-val');
 const glowVal = document.getElementById('glow-val');
 const camToggle = document.getElementById('cam-toggle');
+const camFlipBtn = document.getElementById('cam-flip');
 const selectionStatus = document.getElementById('selection-status');
 const zoomOutBtn = document.getElementById('btn-zoom-out');
 const zoomResetBtn = document.getElementById('btn-zoom-reset');
@@ -112,6 +118,8 @@ const video = document.createElement('video');
 video.autoplay = true;
 video.playsInline = true;
 video.muted = true;
+video.setAttribute('playsinline', '');
+video.setAttribute('webkit-playsinline', '');
 
 const HAND_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -180,6 +188,58 @@ camToggle.onclick = () => {
   cameraVisible = !cameraVisible;
   camToggle.textContent = cameraVisible ? 'Camera ON' : 'Camera OFF';
 };
+
+if (camFlipBtn) {
+  camFlipBtn.onclick = async () => {
+    const nextMode = currentFacingMode === 'user' ? 'environment' : 'user';
+    camFlipBtn.textContent = '🔄 ...';
+    try {
+      await startCamera(nextMode);
+      camFlipBtn.textContent = nextMode === 'user' ? '🔄 Front' : '🔄 Rear';
+    } catch (err) {
+      console.warn('Camera flip error:', err);
+      camFlipBtn.textContent = '🔄 Flip';
+    }
+  };
+}
+
+if (toolbarToggleBtn) {
+  toolbarToggleBtn.onclick = () => {
+    toolbar.classList.toggle('collapsed');
+  };
+}
+
+if (toolbarCloseBtn) {
+  toolbarCloseBtn.onclick = () => {
+    toolbar.classList.add('collapsed');
+  };
+}
+
+// Touch/Stylus Drawing Fallback for mobile
+canvasStack.addEventListener('pointerdown', (e) => {
+  if (isPointInsideToolbar({ x: e.clientX, y: e.clientY })) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  isTouchDrawing = true;
+  const rect = canvasStack.getBoundingClientRect();
+  const pt = screenToWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  beginStroke(pt);
+});
+
+canvasStack.addEventListener('pointermove', (e) => {
+  if (!isTouchDrawing) return;
+  const rect = canvasStack.getBoundingClientRect();
+  const pt = screenToWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  extendStroke(pt);
+});
+
+const finishTouchDrawing = () => {
+  if (!isTouchDrawing) return;
+  isTouchDrawing = false;
+  finishStroke();
+};
+
+canvasStack.addEventListener('pointerup', finishTouchDrawing);
+canvasStack.addEventListener('pointercancel', finishTouchDrawing);
 
 zoomOutBtn.onclick = () => applyZoom(1 / 1.15);
 zoomInBtn.onclick = () => applyZoom(1.15);
@@ -688,17 +748,41 @@ function saveCompositeImage() {
   link.click();
 }
 
+function getVideoTransform() {
+  if (!video.videoWidth || !video.videoHeight) {
+    return { dx: 0, dy: 0, dWidth: viewport.width, dHeight: viewport.height };
+  }
+  const canvasRatio = viewport.width / viewport.height;
+  const videoRatio = video.videoWidth / video.videoHeight;
+  let dWidth, dHeight, dx, dy;
+  if (canvasRatio > videoRatio) {
+    dWidth = viewport.width;
+    dHeight = viewport.width / videoRatio;
+    dx = 0;
+    dy = (viewport.height - dHeight) / 2;
+  } else {
+    dHeight = viewport.height;
+    dWidth = viewport.height * videoRatio;
+    dx = (viewport.width - dWidth) / 2;
+    dy = 0;
+  }
+  return { dx, dy, dWidth, dHeight };
+}
+
 function toCanvasPoint(point) {
+  const { dx, dy, dWidth, dHeight } = getVideoTransform();
+  const isMirrored = currentFacingMode === 'user';
+  const normX = isMirrored ? (1 - point.x) : point.x;
   return {
-    x: (1 - point.x) * viewport.width,
-    y: point.y * viewport.height,
+    x: normX * dWidth + dx,
+    y: point.y * dHeight + dy,
   };
 }
 
 function distanceOnCanvas(a, b) {
-  const dx = (a.x - b.x) * viewport.width;
-  const dy = (a.y - b.y) * viewport.height;
-  return Math.hypot(dx, dy);
+  const ptA = toCanvasPoint(a);
+  const ptB = toCanvasPoint(b);
+  return Math.hypot(ptA.x - ptB.x, ptA.y - ptB.y);
 }
 
 function normalizedDistance(a, b) {
@@ -946,14 +1030,13 @@ function drawSelectionHighlight(stroke) {
 }
 
 function drawHandSkeleton(landmarks, gesture) {
-  const toX = point => (1 - point.x) * viewport.width;
-  const toY = point => point.y * viewport.height;
-
   HAND_CONNECTIONS.forEach(([a, b]) => {
+    const pA = toCanvasPoint(landmarks[a]);
+    const pB = toCanvasPoint(landmarks[b]);
     uiCtx.save();
     uiCtx.beginPath();
-    uiCtx.moveTo(toX(landmarks[a]), toY(landmarks[a]));
-    uiCtx.lineTo(toX(landmarks[b]), toY(landmarks[b]));
+    uiCtx.moveTo(pA.x, pA.y);
+    uiCtx.lineTo(pB.x, pB.y);
     uiCtx.strokeStyle =
       gesture === 'draw' ? 'rgba(0, 245, 255, 0.55)' :
       gesture === 'erase' ? 'rgba(255, 100, 100, 0.55)' :
@@ -966,13 +1049,12 @@ function drawHandSkeleton(landmarks, gesture) {
   });
 
   landmarks.forEach((point, index) => {
-    const x = toX(point);
-    const y = toY(point);
+    const p = toCanvasPoint(point);
     const isTip = [4, 8, 12, 16, 20].includes(index);
 
     uiCtx.save();
     uiCtx.beginPath();
-    uiCtx.arc(x, y, isTip ? 5 : 3, 0, Math.PI * 2);
+    uiCtx.arc(p.x, p.y, isTip ? 5 : 3, 0, Math.PI * 2);
 
     if (isTip) {
       uiCtx.fillStyle =
@@ -1501,10 +1583,16 @@ function drawCameraFrame() {
     return;
   }
 
+  const { dx, dy, dWidth, dHeight } = getVideoTransform();
+  const isMirrored = currentFacingMode === 'user';
   camCtx.save();
-  camCtx.translate(viewport.width, 0);
-  camCtx.scale(-1, 1);
-  camCtx.drawImage(video, 0, 0, viewport.width, viewport.height);
+  if (isMirrored) {
+    camCtx.translate(viewport.width, 0);
+    camCtx.scale(-1, 1);
+    camCtx.drawImage(video, dx, dy, dWidth, dHeight);
+  } else {
+    camCtx.drawImage(video, dx, dy, dWidth, dHeight);
+  }
   camCtx.restore();
 }
 
@@ -1661,6 +1749,39 @@ renderArtwork();
 renderOverlay(null, 'idle');
 updateHUD('idle');
 
+async function startCamera(facingMode = 'user') {
+  if (currentStream) {
+    try {
+      currentStream.getTracks().forEach(track => track.stop());
+    } catch {}
+    currentStream = null;
+  }
+  currentFacingMode = facingMode;
+
+  const constraintList = [
+    { video: { facingMode: { exact: facingMode }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, min: 30 } } },
+    { video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } } },
+    { video: { facingMode: facingMode } },
+    { video: true }
+  ];
+
+  let lastError = null;
+  for (const constraint of constraintList) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraint);
+      currentStream = stream;
+      video.srcObject = stream;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      await video.play();
+      return stream;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Could not access camera');
+}
+
 async function init() {
   loaderFill.style.width = '20%';
   loaderText.textContent = 'Loading MediaPipe...';
@@ -1672,36 +1793,42 @@ async function init() {
   loaderFill.style.width = '55%';
   loaderText.textContent = 'Loading hand model...';
 
-  handLandmarker = await HandLandmarker.createFromOptions(fileset, {
-    baseOptions: {
-      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-      delegate: 'GPU',
-    },
-    runningMode: 'VIDEO',
-    numHands: 2,
-    minHandDetectionConfidence: 0.72,
-    minHandPresenceConfidence: 0.72,
-    minTrackingConfidence: 0.82,
-  });
+  try {
+    handLandmarker = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate: 'GPU',
+      },
+      runningMode: 'VIDEO',
+      numHands: 2,
+      minHandDetectionConfidence: 0.72,
+      minHandPresenceConfidence: 0.72,
+      minTrackingConfidence: 0.82,
+    });
+  } catch (gpuErr) {
+    console.warn('GPU acceleration unavailable, falling back to CPU:', gpuErr);
+    loaderText.textContent = 'Falling back to CPU tracking...';
+    handLandmarker = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate: 'CPU',
+      },
+      runningMode: 'VIDEO',
+      numHands: 2,
+      minHandDetectionConfidence: 0.72,
+      minHandPresenceConfidence: 0.72,
+      minTrackingConfidence: 0.82,
+    });
+  }
 
   loaderFill.style.width = '80%';
   loaderText.textContent = 'Starting camera...';
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: 'user',
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-      frameRate: { ideal: 60, min: 30 },
-    },
-  });
-
-  video.srcObject = stream;
-  await video.play();
+  await startCamera(currentFacingMode);
 
   loaderFill.style.width = '100%';
   loaderText.textContent = 'Ready!';
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await new Promise(resolve => setTimeout(resolve, 400));
 
   loadingEl.classList.add('hidden');
   onboarding.classList.remove('hidden');
@@ -1711,6 +1838,10 @@ async function init() {
     detect();
   };
 }
+
+window.addEventListener('orientationchange', () => {
+  setTimeout(resizeCanvases, 200);
+});
 
 init().catch(error => {
   loaderText.textContent = 'Error: ' + error.message;

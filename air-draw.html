@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Air Draw - Gesture-Based Doodler</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -14,10 +14,14 @@
       --neon-pink: #ff00ff;
       --neon-green: #00ff88;
       --dark: #0a0a0f;
-      --glass: rgba(255,255,255,0.06);
-      --glass-border: rgba(255,255,255,0.12);
-      --ui-font: 'Space Grotesk', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+      --glass: rgba(255,255,255,0.08);
+      --glass-border: rgba(255,255,255,0.14);
+      --ui-font: 'Space Grotesk', 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
       --emoji-font: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
     }
 
     body {
@@ -27,8 +31,12 @@
       overflow: hidden;
       width: 100vw;
       height: 100vh;
+      height: 100dvh;
       text-rendering: optimizeLegibility;
       -webkit-font-smoothing: antialiased;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
     }
 
     /* Loading Screen */
@@ -37,127 +45,184 @@
       background: var(--dark);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 24px;
+      padding: 20px;
       transition: opacity 0.6s ease;
     }
     #loading.hidden { opacity: 0; pointer-events: none; }
 
     .logo-title {
-      font-size: 2rem; font-weight: 700; letter-spacing: -0.02em;
+      font-size: clamp(1.6rem, 5vw, 2.2rem);
+      font-weight: 700; letter-spacing: -0.02em;
       background: linear-gradient(135deg, var(--neon-cyan), var(--neon-pink));
       background-clip: text;
       -webkit-background-clip: text;
       color: transparent;
+      text-align: center;
     }
     .loader-bar {
-      width: 200px; height: 2px;
+      width: min(240px, 80vw); height: 3px;
       background: rgba(255,255,255,0.1);
-      border-radius: 2px; overflow: hidden;
+      border-radius: 3px; overflow: hidden;
     }
     .loader-fill {
       height: 100%;
       background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
       width: 0%; transition: width 0.4s ease;
-      border-radius: 2px;
+      border-radius: 3px;
     }
-    .loader-text { font-size: 13px; color: rgba(255,255,255,0.5); letter-spacing: 0.05em; }
+    .loader-text { font-size: 13px; color: rgba(255,255,255,0.6); letter-spacing: 0.05em; text-align: center; }
 
     /* Onboarding Modal */
     #onboarding {
       position: fixed; inset: 0; z-index: 90;
       background: rgba(0,0,0,0.85);
       display: flex; align-items: center; justify-content: center;
+      padding: max(16px, var(--safe-top)) max(16px, var(--safe-right)) max(16px, var(--safe-bottom)) max(16px, var(--safe-left));
     }
     #onboarding.hidden { display: none; }
     .modal {
       background: #13131a;
       border: 1px solid var(--glass-border);
       border-radius: 20px;
-      padding: 36px 40px;
-      max-width: 480px; width: 90%;
+      padding: clamp(20px, 4vw, 36px) clamp(16px, 4vw, 36px);
+      max-width: 480px; width: 100%;
+      max-height: calc(100dvh - 36px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       text-align: center;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
     }
-    .modal h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 8px; }
-    .modal p { color: rgba(255,255,255,0.5); font-size: 14px; margin-bottom: 28px; }
+    .modal h2 { font-size: clamp(1.2rem, 4vw, 1.45rem); font-weight: 600; margin-bottom: 6px; }
+    .modal p { color: rgba(255,255,255,0.55); font-size: 13.5px; margin-bottom: 20px; line-height: 1.4; }
     .gestures-grid {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 12px; margin-bottom: 28px;
+      gap: 10px; margin-bottom: 20px;
     }
     .gesture-card {
       background: var(--glass);
       border: 1px solid var(--glass-border);
-      border-radius: 12px; padding: 16px 12px;
-      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      border-radius: 12px; padding: 12px 10px;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
     }
     .gesture-card.wide {
       grid-column: span 2;
     }
     .gesture-icon {
-      font-size: 28px;
+      font-size: 24px;
       font-family: var(--emoji-font);
       line-height: 1;
     }
-    .gesture-label { font-size: 13px; font-weight: 600; color: var(--neon-cyan); }
-    .gesture-desc { font-size: 11px; color: rgba(255,255,255,0.45); text-align: center; }
+    .gesture-label { font-size: 12.5px; font-weight: 600; color: var(--neon-cyan); }
+    .gesture-desc { font-size: 11px; color: rgba(255,255,255,0.55); text-align: center; line-height: 1.3; }
     .modal-tip {
-      margin: -6px 0 20px;
-      color: rgba(255,255,255,0.6);
-      font-size: 12px;
-      line-height: 1.45;
+      margin: -4px 0 18px;
+      color: rgba(255,255,255,0.55);
+      font-size: 11.5px;
+      line-height: 1.4;
     }
     .btn-start {
       background: linear-gradient(135deg, var(--neon-cyan), var(--neon-pink));
-      color: #000; border: none; border-radius: 10px;
-      padding: 12px 36px; font-size: 15px; font-weight: 600;
+      color: #000; border: none; border-radius: 12px;
+      padding: 13px 40px; font-size: 15px; font-weight: 700;
       cursor: pointer; font-family: inherit;
+      width: 100%; max-width: 240px;
       transition: transform 0.15s, opacity 0.15s;
+      box-shadow: 0 4px 20px rgba(0,245,255,0.3);
     }
-    .btn-start:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-start:hover { opacity: 0.92; transform: translateY(-1px); }
     .btn-start:active { transform: scale(0.97); }
 
     /* Main App */
     #app {
       position: fixed; inset: 0;
       display: flex; align-items: stretch; justify-content: center;
+      touch-action: none;
     }
 
     .canvas-stack {
       position: relative; flex: 1; overflow: hidden;
+      touch-action: none;
     }
     .canvas-stack canvas {
       position: absolute; inset: 0;
       width: 100%; height: 100%;
+      touch-action: none;
     }
     #camera-canvas { z-index: 1; }
     #drawing-canvas { z-index: 2; }
-    #ui-canvas { z-index: 3; }
+    #ui-canvas { z-index: 3; pointer-events: none; }
+
+    /* Top Controls Bar */
+    #top-controls {
+      position: absolute;
+      top: max(14px, calc(var(--safe-top) + 8px));
+      left: max(14px, calc(var(--safe-left) + 8px));
+      right: max(14px, calc(var(--safe-right) + 8px));
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      z-index: 15;
+      pointer-events: none;
+    }
+    .top-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
+    }
+    .pill-btn {
+      background: rgba(10,10,15,0.75);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px; padding: 7px 14px;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; backdrop-filter: blur(10px);
+      color: rgba(255,255,255,0.85);
+      transition: background 0.15s, transform 0.1s, border-color 0.15s;
+      display: flex; align-items: center; gap: 5px;
+      touch-action: manipulation;
+    }
+    .pill-btn:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); }
+    .pill-btn:active { transform: scale(0.95); }
 
     /* Toolbar */
     #toolbar {
-      position: absolute; right: 20px; top: 50%;
+      position: absolute; right: max(16px, calc(var(--safe-right) + 8px)); top: 50%;
       transform: translateY(-50%);
-      z-index: 10;
+      z-index: 20;
       display: flex; flex-direction: column; gap: 6px;
-      background: rgba(10,10,15,0.85);
+      background: rgba(10,10,15,0.88);
       border: 1px solid var(--glass-border);
       border-radius: 16px; padding: 12px 10px;
-      backdrop-filter: blur(12px);
-      width: min(320px, calc(100vw - 32px));
+      backdrop-filter: blur(14px);
+      width: min(290px, calc(100vw - 32px));
       min-width: 0;
-      max-height: calc(100vh - 40px);
+      max-height: calc(100dvh - 90px);
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      transition: opacity 0.25s, transform 0.25s, visibility 0.25s;
+      pointer-events: auto;
+    }
+    #toolbar.collapsed {
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-50%) scale(0.9);
+      pointer-events: none;
     }
     #toolbar.hand-under {
       z-index: 2;
-      opacity: 0.82;
+      opacity: 0.85;
     }
     .toolbar-grip {
       display: flex; align-items: center; justify-content: space-between;
       gap: 10px;
       margin: -2px 0 2px;
-      padding: 2px 2px 4px;
-      color: rgba(255,255,255,0.46);
-      font-size: 9px;
-      letter-spacing: 0.16em;
+      padding: 2px 4px 6px;
+      color: rgba(255,255,255,0.5);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
       cursor: grab;
       user-select: none;
@@ -166,34 +231,37 @@
     .toolbar-grip:active { cursor: grabbing; }
     .toolbar-grip::before {
       content: 'Palette';
-      color: rgba(255,255,255,0.7);
-      letter-spacing: 0.18em;
+      color: var(--neon-cyan);
+      letter-spacing: 0.16em;
     }
-    .toolbar-grip::after {
-      content: 'Drag';
-      color: rgba(255,255,255,0.34);
-      letter-spacing: 0.14em;
+    .toolbar-close-btn {
+      background: none; border: none; color: rgba(255,255,255,0.5);
+      font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+      line-height: 1;
     }
+    .toolbar-close-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
 
     .tb-label {
       font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
-      color: rgba(255,255,255,0.35); margin-bottom: 2px;
+      color: rgba(255,255,255,0.45); margin-bottom: 2px; font-weight: 600;
     }
 
     .color-grid {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
     }
     .color-swatch {
-      width: 18px; height: 18px; border-radius: 50%;
+      width: 22px; height: 22px; border-radius: 50%;
       cursor: pointer; border: 2px solid transparent;
+      margin: auto;
       transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+      touch-action: manipulation;
     }
-    .color-swatch:hover { transform: scale(1.2); }
-    .color-swatch.active { border-color: #fff; transform: scale(1.15); }
+    .color-swatch:hover { transform: scale(1.18); }
+    .color-swatch.active { border-color: #fff; transform: scale(1.16); box-shadow: 0 0 10px var(--swatch-color); }
     .color-swatch.hand-hover {
-      border-color: rgba(255,255,255,0.92);
+      border-color: rgba(255,255,255,0.95);
       transform: scale(1.28);
-      box-shadow: 0 0 0 2px rgba(255,255,255,0.08), 0 0 18px var(--swatch-color);
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.15), 0 0 18px var(--swatch-color);
     }
 
     .tb-divider {
@@ -202,10 +270,11 @@
     }
 
     input[type=range] {
-      width: 100%; height: 4px; border-radius: 2px;
+      width: 100%; height: 6px; border-radius: 3px;
       -webkit-appearance: none; appearance: none;
-      background: rgba(255,255,255,0.15); cursor: pointer; outline: none;
+      background: rgba(255,255,255,0.18); cursor: pointer; outline: none;
       transition: background 0.15s, filter 0.15s;
+      touch-action: pan-x;
     }
     input[type=range].hand-slider-active {
       background: rgba(0,245,255,0.28);
@@ -213,21 +282,22 @@
     }
     input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none; appearance: none;
-      width: 14px; height: 14px; border-radius: 50%;
+      width: 16px; height: 16px; border-radius: 50%;
       background: var(--neon-cyan); cursor: pointer;
+      box-shadow: 0 0 8px rgba(0,245,255,0.6);
     }
     input[type=range].hand-slider-active::-webkit-slider-thumb {
-      box-shadow: 0 0 0 3px rgba(255,255,255,0.16), 0 0 14px rgba(0,245,255,0.55);
-      transform: scale(1.08);
+      box-shadow: 0 0 0 3px rgba(255,255,255,0.2), 0 0 14px rgba(0,245,255,0.65);
+      transform: scale(1.1);
     }
 
     .val-display {
-      font-size: 11px; color: rgba(255,255,255,0.5);
+      font-size: 11px; color: rgba(255,255,255,0.55);
       text-align: right; font-variant-numeric: tabular-nums;
     }
 
     .icon-btn {
-      width: 34px; height: 34px; border-radius: 8px;
+      width: 36px; height: 36px; border-radius: 9px;
       background: var(--glass); border: 1px solid var(--glass-border);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; transition: background 0.15s, transform 0.1s;
@@ -236,68 +306,68 @@
       line-height: 1;
       color: rgba(255,255,255,0.92);
       user-select: none;
+      touch-action: manipulation;
     }
-    .icon-btn:hover { background: rgba(255,255,255,0.12); }
-    .icon-btn:active { transform: scale(0.93); }
-    .btn-row { display: flex; gap: 6px; justify-content: center; }
+    .icon-btn:hover { background: rgba(255,255,255,0.16); }
+    .icon-btn:active { transform: scale(0.92); }
+    .btn-row { display: flex; gap: 8px; justify-content: center; }
     .btn-row .icon-btn { font-family: var(--emoji-font); }
     .zoom-row { display: flex; gap: 6px; align-items: center; }
     .zoom-row .icon-btn { font-family: var(--ui-font); }
     .zoom-pill {
-      flex: 1; min-width: 58px; height: 34px; border-radius: 8px;
+      flex: 1; min-width: 58px; height: 36px; border-radius: 9px;
       border: 1px solid var(--glass-border);
-      background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85);
-      font: inherit; cursor: pointer;
+      background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.9);
+      font: inherit; cursor: pointer; font-weight: 600;
       transition: background 0.15s, transform 0.1s;
+      touch-action: manipulation;
     }
-    .zoom-pill:hover { background: rgba(255,255,255,0.12); }
-    .zoom-pill:active { transform: scale(0.97); }
+    .zoom-pill:hover { background: rgba(255,255,255,0.16); }
+    .zoom-pill:active { transform: scale(0.96); }
     .zoom-help {
       font-size: 9.5px;
       line-height: 1.35;
-      color: rgba(255,255,255,0.42);
+      color: rgba(255,255,255,0.45);
     }
     .status-text {
-      font-size: 10.5px; line-height: 1.32; color: rgba(255,255,255,0.58);
+      font-size: 10.5px; line-height: 1.32; color: rgba(255,255,255,0.6);
     }
 
     /* HUD */
     #gesture-hud {
-      position: absolute; left: 50%; bottom: 24px;
+      position: absolute; left: 50%;
+      bottom: max(16px, calc(var(--safe-bottom) + 8px));
       transform: translateX(-50%);
       z-index: 10;
       display: flex; align-items: center; gap: 10px;
-      background: rgba(10,10,15,0.7);
+      background: rgba(10,10,15,0.75);
       border: 1px solid var(--glass-border);
-      border-radius: 30px; padding: 10px 20px;
-      backdrop-filter: blur(10px);
-      font-size: 13px; font-weight: 500;
+      border-radius: 30px; padding: 8px 18px;
+      backdrop-filter: blur(12px);
+      font-size: 12px; font-weight: 600;
       transition: opacity 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
     }
-    #hud-icon { font-size: 18px; }
-    #hud-text { color: rgba(255,255,255,0.7); }
-
-    /* Camera toggle */
-    #cam-toggle {
-      position: absolute; left: 20px; top: 20px;
-      z-index: 10;
-      background: rgba(10,10,15,0.7);
-      border: 1px solid var(--glass-border);
-      border-radius: 8px; padding: 8px 14px;
-      font-size: 12px; font-weight: 500;
-      cursor: pointer; backdrop-filter: blur(8px);
-      color: rgba(255,255,255,0.7);
-      transition: background 0.15s;
-    }
-    #cam-toggle:hover { background: rgba(255,255,255,0.1); }
+    #hud-icon { font-size: 16px; color: var(--neon-cyan); }
+    #hud-text { color: rgba(255,255,255,0.85); letter-spacing: 0.04em; }
 
     @media (max-width: 780px) {
       #toolbar {
-        top: auto; right: 12px; left: 12px; bottom: 88px;
-        transform: none; min-width: 0;
+        top: auto;
+        right: max(12px, var(--safe-right));
+        left: auto;
+        bottom: max(72px, calc(var(--safe-bottom) + 64px));
+        transform: none;
+        width: min(280px, calc(100vw - 24px));
+        max-height: min(380px, 60dvh);
       }
 
-      .color-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+      #toolbar.collapsed {
+        transform: translateY(20px) scale(0.9);
+      }
+
       .gestures-grid { grid-template-columns: 1fr; }
       .gesture-card.wide { grid-column: span 1; }
     }
@@ -344,7 +414,7 @@
         <span class="gesture-desc">Use both hands and pinch to zoom in or zoom out</span>
       </div>
     </div>
-    <p class="modal-tip">Use the wheel or plus and minus buttons. You can also pinch with both hands to zoom like a hologram.</p>
+    <p class="modal-tip">Touch screen to draw directly or use hand gestures in front of your camera.</p>
     <button class="btn-start" id="btn-go">Let's Draw!</button>
   </div>
 </div>
@@ -357,9 +427,22 @@
     <canvas id="ui-canvas"></canvas>
   </div>
 
+  <!-- Top Controls Bar -->
+  <div id="top-controls">
+    <div class="top-btn-group">
+      <button class="pill-btn" id="cam-toggle" title="Toggle Camera">Camera ON</button>
+      <button class="pill-btn" id="cam-flip" title="Flip Camera">🔄 Flip</button>
+    </div>
+    <div class="top-btn-group">
+      <button class="pill-btn" id="toolbar-toggle" title="Toggle Palette">🎨 Tools</button>
+    </div>
+  </div>
+
   <!-- Toolbar -->
   <div id="toolbar">
-    <div class="toolbar-grip" id="toolbar-grip"></div>
+    <div class="toolbar-grip" id="toolbar-grip">
+      <button class="toolbar-close-btn" id="toolbar-close" title="Minimize">&times;</button>
+    </div>
     <div class="tb-label">Colors</div>
     <div class="color-grid" id="color-grid"></div>
     <div class="tb-divider"></div>
@@ -392,9 +475,6 @@
     <span id="hud-icon">IDLE</span>
     <span id="hud-text">SHOW YOUR HAND</span>
   </div>
-
-  <!-- Camera Toggle -->
-  <button id="cam-toggle">Camera ON</button>
 </div>
 
 <script type="module" src="./air-draw.js"></script>
